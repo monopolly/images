@@ -1,0 +1,169 @@
+package images
+
+import (
+	"bytes"
+	"fmt"
+	"image"
+	"image/jpeg"
+	"image/png"
+	"path"
+	"path/filepath"
+	"time"
+
+	"github.com/disintegration/imaging"
+	"github.com/monopolly/errors"
+	"github.com/monopolly/monopolly/sid"
+)
+
+/*
+	Имя файла hashids(user, date)
+
+	Аватар генерится в 4 размерах
+	600px, 300px, 150px, 40px
+
+	http://cdn.monopolly.com/i/uxpn/a/g4k1qky4.jpg
+	http://cdn.monopolly.com/i/uxpn/a/g4k1qky4.jpg
+	http://cdn.monopolly.com/i/uxpn/a/g4k1qky4.jpg
+*/
+
+var originSize = 600
+var avatarsizes = []int{300, 150, 75}
+
+//func (a *Client) resize(image.Image, )
+
+func (a *Client) Avatar(profile sid.Profile, imagefile []byte, size ...int) (url string, err *errors.E) {
+
+	switch {
+	case len(imagefile) == 0:
+		err = errors.Empty()
+		return
+	case profile.GetAccount() == 0:
+		err = errors.Format("profile")
+		return
+	}
+
+	//если base64 то превращаем в файл
+	imagefile = convert(imagefile)
+
+	//пробуем получить изображение
+	img, ext, er := image.Decode(bytes.NewReader(imagefile))
+	if er != nil {
+		err = errors.File(er)
+		return
+	}
+
+	switch ext {
+	case "jpg", "jpeg", "gif":
+		ext = "jpg"
+	case "png":
+	default:
+		err = errors.File("Wrong format", ext)
+		return
+	}
+
+	//fmt.Println("file", len(imagefile)/1000, "kb", ext)
+
+	//буфер для результата
+	file := new(bytes.Buffer)
+
+	//big
+
+	switch ext {
+	case "jpg":
+		er = jpeg.Encode(file, imaging.Thumbnail(img, originSize, originSize, imaging.Blackman), &jpeg.Options{Quality: 90})
+		if er != nil {
+			err = errors.Format(er)
+			return
+		}
+	case "png":
+		er = png.Encode(file, imaging.Thumbnail(img, originSize, originSize, imaging.Blackman))
+		if er != nil {
+			err = errors.Format(er)
+			return
+		}
+	default:
+		return
+	}
+
+	//генерим имя
+	name := hash.Encode(profile.GetAccount(), time.Now().Unix())
+
+	//имя файла
+	filename := fmt.Sprintf("%s.%s", name, ext)
+	fmt.Println("filename", filename)
+
+	//генерим путь
+	dir := path.Join("i", string(profile), "a")
+	fmt.Println("dir", dir)
+
+	//удаляем старый аватар
+	er1 := a.cdn.DeleteDir(dir)
+	fmt.Println("delete", er1)
+
+	full := filepath.Join(dir, filename)
+	fmt.Println("full", full)
+
+	url = fmt.Sprintf("%s/%s", a.baseurl, full)
+	fmt.Println("url", url)
+
+	//загружаем
+	er = a.cdn.Upload(file.Bytes(), full)
+	if er != nil {
+		er = errors.CDN(er)
+		return
+	}
+	/*
+		//создаем аватары других размеров
+		for _, x := range avatarsizes {
+			//буфер для результата
+			file.Reset()
+
+			img1 := imaging.Thumbnail(img, x, x, imaging.Blackman)
+			img1 = imaging.Sharpen(img1, 1)
+
+			switch ext {
+			case "jpg":
+				er = jpeg.Encode(file, imaging.Thumbnail(img1, originSize, originSize, imaging.Blackman), &jpeg.Options{Quality: 90})
+				if er != nil {
+					err = errors.Format(er)
+					return
+				}
+			case "png":
+				er = png.Encode(file, imaging.Thumbnail(img1, originSize, originSize, imaging.Blackman))
+				if er != nil {
+					err = errors.Format(er)
+					return
+				}
+			default:
+				return
+			}
+
+			//имя файла
+			filename := fmt.Sprintf("%s%d.%s", name, x, ext)
+			//генерим путь
+			dir := path.Join("i", string(profile), "a")
+			full := filepath.Join(dir, filename)
+			fmt.Println("url", fmt.Sprintf("%s/%s", a.baseurl, full))
+
+			//загружаем
+			er = a.cdn.Upload(file.Bytes(), full)
+			if er != nil {
+				er = errors.CDN(er)
+				return
+			}
+		} */
+
+	return
+}
+
+/*
+//
+func replaceTransparent(i image.Image) (dst *image.RGBA) {
+	back := color.RGBA{251, 251, 252, 100} // Dark red.
+
+	dst = image.NewRGBA(i.Bounds())
+	draw.Draw(dst, dst.Bounds(), image.NewUniform(back), image.Point{}, draw.Src)
+	draw.Draw(dst, dst.Bounds(), i, i.Bounds().Min, draw.Over)
+	return
+}
+*/

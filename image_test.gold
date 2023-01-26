@@ -1,0 +1,232 @@
+package images
+
+//testing
+
+import (
+	"fmt"
+	"image"
+	"image/color"
+	"runtime"
+	"strings"
+	"testing"
+
+	"github.com/disintegration/imaging"
+	"github.com/monopolly/console"
+	"github.com/monopolly/file"
+	"github.com/stretchr/testify/assert"
+)
+
+func TestCompress(t *testing.T) {
+
+	function, _, _, _ := runtime.Caller(0)
+	fn := runtime.FuncForPC(function).Name()
+	var log = console.New()
+	log.OK(fmt.Sprintf("%s\n", fn[strings.LastIndex(fn, ".Test")+5:]))
+	a := assert.New(t)
+	_ = a
+
+	path := "big.png"
+	r, _ := NewFromFile(path)
+	r.Compress()
+	file.Save("big_small.png", r.Export().Bytes())
+
+	return
+
+}
+
+func combine(c1, c2 color.Color) color.Color {
+	r, g, b, a := c1.RGBA()
+	r2, g2, b2, a2 := c2.RGBA()
+
+	return color.RGBA{
+		uint8((r + r2) >> 9), // div by 2 followed by ">> 8"  is ">> 9"
+		uint8((g + g2) >> 9),
+		uint8((b + b2) >> 9),
+		uint8((a + a2) >> 9),
+	}
+}
+
+/* And using it:
+
+x, y := 1, 1
+img.Set(x, y, combine(img.At(x, y), color.RGBA{85, 165, 34, 50}))
+*/
+func TestBG(t *testing.T) {
+	function, _, _, _ := runtime.Caller(0)
+	fn := runtime.FuncForPC(function).Name()
+	var log = console.New()
+	log.OK(fmt.Sprintf("%s\n", fn[strings.LastIndex(fn, ".Test")+5:]))
+	a := assert.New(t)
+	_ = a
+
+	path := "man.jpg"
+	original, _ := NewFromFile(path)
+	original.RemoveBackgroundDirty()
+	file.Save("man_transparent.png", original.PNG().Bytes())
+	return
+
+	init := original.Image.At(0, 0)
+	newimage := image.NewRGBA(image.Rectangle{image.Point{0, 0}, image.Point{original.Width, original.Height}})
+	for x := 0; x < original.Width; x++ {
+		for y := 0; y < original.Height; y++ {
+			pixel := original.Image.At(x, y)
+			diff := CompareColor(init, pixel)
+			switch {
+			case diff < 0.02:
+				newimage.Set(x, y, color.Transparent)
+			default:
+				newimage.Set(x, y, pixel)
+				//newimage.Set(x, y, color.RGBA{111, 111, 111, 255})
+			}
+		}
+	}
+
+	//mask := stackblur.Process(newimage, uint32(newimage.Rect.Max.X), uint32(newimage.Rect.Max.Y),1, 1)
+
+	final := image.NewRGBA(image.Rectangle{image.Point{0, 0}, image.Point{original.Width, original.Height}})
+	for x := 0; x < original.Width; x++ {
+		for y := 0; y < original.Height; y++ {
+			pixel := mask.At(x, y)
+			_, _, _, alpha := pixel.RGBA()
+			gg := pixel.(color.NRGBA)
+			switch alpha {
+			case 0:
+				final.Set(x, y, color.Transparent)
+			default:
+				rgb := original.Image.At(x, y).(color.NRGBA)
+				rgb.A = gg.A
+				final.Set(x, y, rgb)
+			}
+		}
+	}
+
+	original.Image = final //newimage
+	file.Save("man_transparent.png", original.PNG().Bytes())
+
+	return
+
+}
+
+func TestNew(t *testing.T) {
+	function, _, _, _ := runtime.Caller(0)
+	fn := runtime.FuncForPC(function).Name()
+	var log = console.New()
+	log.OK(fmt.Sprintf("%s\n", fn[strings.LastIndex(fn, ".Test")+5:]))
+	a := assert.New(t)
+	_ = a
+
+	//RemoveBG("logo1.jpg")
+	//RemoveBG("logo2.png")
+
+	r, _ := NewFromFile("logo1.jpg")
+	r.CropBackground()
+	file.Save("logo1_clean.jpg", r.Export().Bytes())
+
+	r, _ = NewFromFile("logo2.png")
+	r.CropBackground()
+	file.Save("logo2_clean.png", r.Export().Bytes())
+
+	r, _ = NewFromFile("15.jpg")
+	r.CropBackground()
+	file.Save("15_clean.jpg", r.Export().Bytes())
+
+	r, _ = NewFromFile("16.jpg")
+	r.CropBackground()
+	file.Save("16_clean.jpg", r.Export().Bytes())
+	return
+
+	b, _ := file.Open("villa.jpg")
+	log.Info(len(b))
+	img, err := New(b)
+	a.Nil(err)
+
+	file.Save(fmt.Sprintf("villa_interior.%s", img.Ext), img.Interior().Export().Bytes())
+	return
+	//log.Info(string(img.ICC))
+	//file.Save("villa.icc", img.ICC)
+
+	log.Info(img.Ext, img.Width, img.Height, img.Image.ColorModel())
+	log.Info(img.ResizeWidth(500).Image.ColorModel())
+
+	var w, h int
+	w = 600
+	file.Save(fmt.Sprintf("villa_w%dpx.%s", w, img.Ext), img.Resize(w).Export(80).Bytes())
+
+	h = 200
+	file.Save(fmt.Sprintf("villa_h%dpx.%s", h, img.Ext), img.Resize(0, h).Export(80).Bytes())
+
+	w = 800
+	h = 200
+	file.Save(fmt.Sprintf("villa_%dx%dpx.%s", w, h, img.Ext), img.Resize(w, h).Export(80).Bytes())
+
+	w = 400
+	h = 2200
+	file.Save(fmt.Sprintf("villa_%dx%dpx.%s", w, h, img.Ext), img.Resize(w, h).Export(80).Bytes())
+
+	w = 1000
+	h = 1000
+	file.Save(fmt.Sprintf("villa_%dx%dpx.%s", w, h, img.Ext), img.Resize(w, h).Export(80).Bytes())
+
+	for filtername, f := range map[string]imaging.ResampleFilter{
+		"Bartlett":          imaging.Bartlett,
+		"Blackman":          imaging.Blackman,
+		"Box":               imaging.Box,
+		"BSpline":           imaging.BSpline,
+		"CatmullRom":        imaging.CatmullRom, //best, 80
+		"Cosine":            imaging.Cosine,     //80, +sharpen best
+		"Gaussian":          imaging.Gaussian,
+		"Hamming":           imaging.Hamming,
+		"Hann":              imaging.Hann,
+		"Hermite":           imaging.Hermite,
+		"Lanczos":           imaging.Lanczos, //80, +sharpen best
+		"Linear":            imaging.Linear,
+		"MitchellNetravali": imaging.MitchellNetravali,
+		"NearestNeighbor":   imaging.NearestNeighbor,
+		"Welch":             imaging.Welch,
+	} {
+		for _, q := range []int{80, 70, 40} {
+			img.Filter = f
+			file.Save(fmt.Sprintf("villa_%s_%d.%s", filtername, q, img.Ext),
+				img.Resize(0, 1200).
+					Sharpen(0.8).
+					Contrast().
+					Export(q).
+					Bytes())
+		}
+	}
+
+}
+
+func TestNewJPG(t *testing.T) {
+	function, _, _, _ := runtime.Caller(0)
+	fn := runtime.FuncForPC(function).Name()
+	var log = console.New()
+	log.OK(fmt.Sprintf("%s\n", fn[strings.LastIndex(fn, ".Test")+5:]))
+	a := assert.New(t)
+	_ = a
+
+	b, _ := file.Open("1.png")
+	img, err := New(b)
+	a.Nil(err)
+
+	out := img.Interior().JPG().Bytes()
+	file.Save(fmt.Sprintf("1.jpg"), out)
+	return
+
+}
+
+func BenchmarkNew(b *testing.B) {
+	b.ReportAllocs()
+	b.ResetTimer()
+	for n := 0; n < b.N; n++ {
+		//db.Search(30, 0, []uint32{1, 2, 3})
+	}
+}
+
+func BenchmarkGetFreeParallel(b *testing.B) {
+	b.RunParallel(func(pb *testing.PB) {
+		for pb.Next() {
+
+		}
+	})
+}

@@ -1,0 +1,190 @@
+package images
+
+import (
+	"bytes"
+	"fmt"
+	"image"
+	"image/gif"
+	"image/jpeg"
+	"image/png"
+	"math/rand"
+	"path"
+	"path/filepath"
+	"time"
+
+	"github.com/monopolly/monopolly/sid"
+
+	"github.com/disintegration/imaging"
+	"github.com/monopolly/errors"
+)
+
+/*
+	Имя файла hashids(user, date)
+
+	Аватар генерится в 4 размерах
+	600px, 300px, 150px, 40px
+
+	http://cdn.monopolly.com/i/uxpn/a/g4k1qky4.jpg
+	http://cdn.monopolly.com/i/uxpn/a/g4k1qky4.jpg
+	http://cdn.monopolly.com/i/uxpn/a/g4k1qky4.jpg
+*/
+
+var maxImageW = 1400
+var maxImageH = 800
+
+//resize: width, height, quality, preview(width)
+func (a *Client) Image(profile sid.Profile, imagefile []byte, resize ...int) (url, preview string, err *errors.E) {
+
+	if imagefile == nil {
+		err = errors.Empty()
+		return
+	}
+
+	//если base64 то превращаем в файл
+	imagefile = convert(imagefile)
+
+	reader := bytes.NewReader(imagefile)
+
+	//пробуем получить изображение
+	img, ext, er := image.Decode(reader)
+	if er != nil {
+		err = errors.File(er)
+		return
+	}
+
+	switch ext {
+	case "jpg", "jpeg", "png", "gif":
+	default:
+		err = errors.Format(ext)
+		return
+	}
+
+	var quality = 80
+	var previewWidth int
+
+	switch len(resize) {
+	case 1:
+		if resize[0] > 0 {
+			img = imaging.Resize(img, resize[0], 0, imaging.Blackman)
+		}
+	case 2:
+		if resize[0] > 0 || resize[1] > 0 {
+			img = imaging.Resize(img, resize[0], resize[1], imaging.Blackman)
+		}
+	case 3:
+		if resize[0] > 0 || resize[1] > 0 {
+			img = imaging.Resize(img, resize[0], resize[1], imaging.Blackman)
+		}
+		if resize[2] > 0 {
+			quality = resize[2]
+		}
+	case 4:
+		if resize[0] > 0 || resize[1] > 0 {
+			img = imaging.Resize(img, resize[0], resize[1], imaging.Blackman)
+		}
+		if resize[2] > 0 {
+			quality = resize[2]
+		}
+		previewWidth = 300
+		if resize[3] > 0 {
+			previewWidth = resize[3]
+		}
+
+	default:
+		size, _, _ := image.DecodeConfig(reader)
+		switch {
+		case size.Height > maxImageH:
+			img = imaging.Resize(img, 0, maxImageH, imaging.Blackman)
+		case size.Width > maxImageW:
+			img = imaging.Resize(img, maxImageW, 0, imaging.Blackman)
+		}
+
+		if len(resize) == 3 && resize[2] > 0 {
+			quality = resize[2]
+		}
+	}
+
+	//буфер для результата
+	file := new(bytes.Buffer)
+
+	//смотрим формат
+
+	switch ext {
+	case "jpg", "jpeg":
+		er = jpeg.Encode(file, img, &jpeg.Options{Quality: quality})
+		ext = "jpg"
+	case "png":
+		er = png.Encode(file, img)
+	case "gif":
+		er = gif.Encode(file, img, &gif.Options{})
+	default:
+		err = errors.Format(ext)
+		return
+	}
+
+	if er != nil {
+		err = errors.Marshal(er)
+		return
+	}
+
+	//генерим имя
+	name := fmt.Sprintf("monopolly_%s%s", string(profile), hash.Encode(time.Now().Unix()-1524234484, rand.Intn(10000), rand.Intn(10000)))
+
+	//имя файла
+	filename := fmt.Sprintf("%s.%s", name, ext)
+	fmt.Println("filename", filename)
+
+	//генерим путь
+	dir := path.Join("i", string(profile), "i")
+	fmt.Println("dir", dir)
+
+	full := filepath.Join(dir, filename)
+	fmt.Println("full", full)
+
+	url = fmt.Sprintf("%s/%s", a.baseurl, full)
+	fmt.Println("url", url)
+
+	//загружаем
+	er = a.cdn.Upload(file.Bytes(), full)
+	if er != nil {
+		er = errors.CDN(er)
+		return
+	}
+
+	//смотрим нужно ли превью
+	if previewWidth == 0 {
+		return
+	}
+
+	//ресетим
+	file.Reset()
+
+	//делаем превью
+	img = imaging.Resize(img, previewWidth, 0, imaging.Blackman)
+
+	switch ext {
+	case "jpg", "jpeg":
+		er = jpeg.Encode(file, img, &jpeg.Options{Quality: quality})
+		ext = "jpg"
+	case "png":
+		er = png.Encode(file, img)
+	case "gif":
+		er = gif.Encode(file, img, &gif.Options{})
+	}
+
+	//имя файла
+	filename = fmt.Sprintf("%s_preview.%s", name, ext)
+	dir = path.Join("i", string(profile), "i")
+	full = filepath.Join(dir, filename)
+
+	//загружаем
+	er = a.cdn.Upload(file.Bytes(), full)
+	if er != nil {
+		er = errors.CDN(er)
+		return
+	}
+
+	preview = fmt.Sprintf("%s/%s", a.baseurl, full)
+	fmt.Println("preview url", url)
+	return
+}
