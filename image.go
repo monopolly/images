@@ -20,6 +20,20 @@ import (
 	"github.com/rwcarlsen/goexif/exif"
 )
 
+const (
+	_ = int(iota)
+	TypeJPG
+	TypePNG
+	TypeGIF
+)
+
+const (
+	_ = int(iota)
+	ShapeBox
+	ShapePortrait
+	ShaperLandscape
+)
+
 func NewFromFile(path string) (a *Image, err error) {
 	b, err := file.Open(path)
 	if err != nil {
@@ -68,12 +82,31 @@ func New(img []byte) (a *Image, err errors.E) {
 		err = errors.File()
 		return
 	}
-	if a.Ext == "jpeg" {
+
+	switch a.Ext {
+	case "jpg", "jpeg":
 		a.Ext = "jpg"
+		a.Type = TypeJPG
+	case "png":
+		a.Type = TypePNG
+	case "gif":
+		a.Type = TypeGIF
 	}
 
 	a.Width = a.Image.Bounds().Size().X
 	a.Height = a.Image.Bounds().Size().Y
+
+	switch {
+	case a.Width == a.Height:
+		a.Shape = ShapeBox
+		a.Ratio = 1
+	case a.Width > a.Height:
+		a.Shape = ShaperLandscape
+		a.Ratio = float64(a.Width) / float64(a.Height)
+	case a.Width < a.Height:
+		a.Shape = ShapePortrait
+		a.Ratio = float64(a.Height) / float64(a.Width)
+	}
 
 	a.Filter = imaging.CatmullRom
 	a.Quality = 80
@@ -122,11 +155,14 @@ var PresetInterior = Preset{
 type Image struct {
 	Source  []byte
 	Image   image.Image
-	Ext     string
-	Width   int
-	Height  int
-	Quality int
-	Size    int
+	Ext     string  //png,jpg
+	Type    int     //png,jpg
+	Shape   int     //box,landscape
+	Ratio   float64 //0.235,0.42114
+	Width   int     //640
+	Height  int     //480
+	Quality int     //80
+	Size    int     //245624 bytes
 	Filter  imaging.ResampleFilter
 }
 
@@ -243,16 +279,21 @@ func (a *Image) Origin() (file []byte) {
 	return a.Source
 }
 
-/* func (a *Image) Bytes(quality ...int) []byte {
-	return a.Export(quality...).Bytes()
-} */
-
 func (a *Image) Base64(quality ...int) string {
 	return base64.StdEncoding.EncodeToString(a.Export(quality...).Bytes())
 }
 
 func (a *Image) Base64HTML(quality ...int) string {
-	return fmt.Sprintf("data:image/jpg;base64,%s", base64.StdEncoding.EncodeToString(a.JPG(quality...).Bytes()))
+	var res []byte
+	switch a.Type {
+	case TypeJPG:
+		res = a.JPG(quality...).Bytes()
+	case TypePNG:
+		res = a.PNG().Bytes()
+	case TypeGIF:
+		res = a.GIF().Bytes()
+	}
+	return fmt.Sprintf("data:image/%s;base64,%s", a.Ext, base64.StdEncoding.EncodeToString(res))
 }
 
 func (a *Image) Sharpen(v ...float64) *Image {
