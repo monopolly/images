@@ -251,10 +251,16 @@ func (a *Image) Export(quality ...int) (file *bytes.Buffer) {
 	return
 }
 
-func (a *Image) GIF() (file *bytes.Buffer) {
+func (a *Image) GIF(options ...*gif.Options) (file *bytes.Buffer) {
 	//смотрим формат
 	file = new(bytes.Buffer)
-	gif.Encode(file, a.Image, &gif.Options{})
+	switch options != nil {
+	case true:
+		gif.Encode(file, a.Image, options[0])
+	default:
+		gif.Encode(file, a.Image, &gif.Options{})
+	}
+
 	return
 }
 
@@ -262,6 +268,18 @@ func (a *Image) PNG() (file *bytes.Buffer) {
 	file = new(bytes.Buffer)
 	png.Encode(file, a.Image)
 	return
+}
+
+func (a *Image) PNGBase64HTML() string {
+	return fmt.Sprintf("data:image/png;base64,%s", base64.StdEncoding.EncodeToString(a.PNG().Bytes()))
+}
+
+func (a *Image) JPGBase64HTML(quality ...int) string {
+	return fmt.Sprintf("data:image/jpg;base64,%s", base64.StdEncoding.EncodeToString(a.JPG(quality...).Bytes()))
+}
+
+func (a *Image) GIFBase64HTML(options ...*gif.Options) string {
+	return fmt.Sprintf("data:image/gif;base64,%s", base64.StdEncoding.EncodeToString(a.GIF(options...).Bytes()))
 }
 
 // Quality ranges from 1 to 100 inclusive
@@ -330,7 +348,7 @@ func (a *Image) Contrast(percents ...float64) *Image {
 }
 
 /* width, height */
-func (a *Image) Resize(size ...int) *Image {
+func (a *Image) ResizeOld(size ...int) *Image {
 	var width, height int
 	switch len(size) {
 	case 0:
@@ -360,6 +378,28 @@ func (a *Image) Resize(size ...int) *Image {
 	newimage.Width = width
 	newimage.Height = height
 	return &newimage
+}
+
+/* width, height */
+func (a *Image) Resize(maxside int) *Image {
+	filter := imaging.Cosine
+	fmt.Println(a.Width, a.Height, a.Size, a.Ratio)
+	switch {
+	case a.Width > a.Height:
+		a.Width = maxside
+		a.Height = int(float64(maxside) / a.Ratio)
+		a.Image = imaging.Resize(a.Image, maxside, int(float64(maxside)/a.Ratio), filter)
+	case a.Width < a.Height:
+		a.Height = maxside
+		a.Width = int(float64(maxside) / a.Ratio)
+		a.Image = imaging.Resize(a.Image, int(float64(maxside)/a.Ratio), maxside, filter)
+	default:
+		a.Height = maxside
+		a.Width = maxside
+		a.Image = imaging.Resize(a.Image, maxside, maxside, filter)
+	}
+
+	return a
 }
 
 func (a *Image) Interior() *Image {

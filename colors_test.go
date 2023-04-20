@@ -22,12 +22,10 @@ func TestColor(t *testing.T) {
 	a := assert.New(t)
 	_ = a
 
-	path := "temp/logocrop.png"
+	path := "temp/big.png"
 	r, _ := NewFromFile(path)
-
-	r = r.CropBackground()
-
-	file.Save("temp/logocrop_done1.png", r.PNG().Bytes())
+	r.Resize(1200)
+	file.Save("temp/big_resize1200.png", r.Export(90).Bytes())
 
 	/* path := "temp/position.jpg"
 	r, err := NewFromFile(path)
