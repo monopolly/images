@@ -9,7 +9,6 @@ import (
 	"image/gif"
 	"image/jpeg"
 	"image/png"
-	"io"
 
 	"github.com/disintegration/imaging"
 	"github.com/monopolly/errors"
@@ -17,7 +16,7 @@ import (
 	"github.com/muesli/smartcrop"
 	"github.com/muesli/smartcrop/nfnt"
 	"github.com/nxshock/colorcrop"
-	"github.com/rwcarlsen/goexif/exif"
+	"golang.org/x/image/webp"
 )
 
 const (
@@ -25,6 +24,7 @@ const (
 	TypeJPG
 	TypePNG
 	TypeGIF
+	TypeWebp
 )
 
 const (
@@ -61,12 +61,13 @@ func New(img []byte) (a *Image, err errors.E) {
 	image.RegisterFormat("jpeg", "jpeg", jpeg.Decode, jpeg.DecodeConfig)
 	image.RegisterFormat("png", "png", png.Decode, png.DecodeConfig)
 	image.RegisterFormat("gif", "gif", gif.Decode, gif.DecodeConfig)
+	image.RegisterFormat("webp", "webp", webp.Decode, webp.DecodeConfig)
 
 	var er error
 	if IsBase64(img) {
 		img, er = Base64ToFile(img)
 		if er != nil {
-			err = errors.File()
+			err = errors.File("Cant parse base64 file")
 			return
 		}
 	}
@@ -79,7 +80,7 @@ func New(img []byte) (a *Image, err errors.E) {
 
 	a.Image, a.Ext, er = Decode(reader)
 	if er != nil {
-		err = errors.File()
+		err = errors.File("Cant decode image: " + er.Error())
 		return
 	}
 
@@ -91,6 +92,8 @@ func New(img []byte) (a *Image, err errors.E) {
 		a.Type = TypePNG
 	case "gif":
 		a.Type = TypeGIF
+	case "webp":
+		a.Type = TypeWebp
 	}
 
 	a.Width = a.Image.Bounds().Size().X
@@ -198,15 +201,6 @@ func (a *Image) Compress() *Image {
 	return a
 }
 
-func (a *Image) Colors() (list map[color.Color]int) {
-	list = make(map[color.Color]int)
-	a.Pixels(func(x image.Point, c color.Color) (stop bool) {
-		list[c]++
-		return
-	})
-	return
-}
-
 // убирает белые и прозрачные пиксели
 func (a *Image) RemoveBackgroundDirty(presicion ...float64) *Image {
 	value := 0.05
@@ -245,6 +239,11 @@ func (a *Image) Export(quality ...int) (file *bytes.Buffer) {
 		png.Encode(file, a.Image)
 	case "gif":
 		gif.Encode(file, a.Image, &gif.Options{})
+	case "webp":
+		res, _ := Webp(a.Image)
+		if res.Len() > 0 {
+			file = &res
+		}
 	default:
 		return
 	}
@@ -267,6 +266,11 @@ func (a *Image) GIF(options ...*gif.Options) (file *bytes.Buffer) {
 func (a *Image) PNG() (file *bytes.Buffer) {
 	file = new(bytes.Buffer)
 	png.Encode(file, a.Image)
+	return
+}
+
+func (a *Image) Webp() (res bytes.Buffer) {
+	res, _ = Webp(a.Image)
 	return
 }
 
@@ -325,23 +329,26 @@ func (a *Image) Sharpen(v ...float64) *Image {
 	return &n
 }
 
-func (a *Image) Brightness(v ...float64) *Image {
-	sh := 1.1
+func (a *Image) Blur(v ...float64) *Image {
+	sh := 0.5
 	if len(v) > 0 {
 		sh = v[0]
 	}
-	img := imaging.AdjustBrightness(a.Image, sh)
+	img := imaging.Blur(a.Image, sh)
 	n := *a
 	n.Image = img
 	return &n
 }
 
-func (a *Image) Contrast(percents ...float64) *Image {
-	sh := 1.1
-	if len(percents) > 0 {
-		sh = percents[0]
-	}
-	img := imaging.AdjustContrast(a.Image, sh)
+func (a *Image) Brightness(percents float64) *Image {
+	img := imaging.AdjustBrightness(a.Image, percents)
+	n := *a
+	n.Image = img
+	return &n
+}
+
+func (a *Image) Contrast(percents float64) *Image {
+	img := imaging.AdjustContrast(a.Image, percents)
 	n := *a
 	n.Image = img
 	return &n
@@ -383,20 +390,22 @@ func (a *Image) ResizeOld(size ...int) *Image {
 /* width, height */
 func (a *Image) Resize(maxside int) *Image {
 	filter := imaging.Cosine
-	fmt.Println(a.Width, a.Height, a.Size, a.Ratio)
+	// fmt.Println(a.Width, a.Height, a.Size, a.Ratio)
 	switch {
 	case a.Width > a.Height:
+		ratio := float64(a.Height) / float64(a.Width)
 		a.Width = maxside
-		a.Height = int(float64(maxside) / a.Ratio)
-		a.Image = imaging.Resize(a.Image, maxside, int(float64(maxside)/a.Ratio), filter)
+		a.Height = int(float64(maxside) * ratio)
+		a.Image = imaging.Resize(a.Image, a.Width, a.Height, filter)
 	case a.Width < a.Height:
+		ratio := float64(a.Width) / float64(a.Height)
 		a.Height = maxside
-		a.Width = int(float64(maxside) / a.Ratio)
-		a.Image = imaging.Resize(a.Image, int(float64(maxside)/a.Ratio), maxside, filter)
+		a.Width = int(float64(maxside) * ratio)
+		a.Image = imaging.Resize(a.Image, a.Width, a.Height, filter)
 	default:
 		a.Height = maxside
 		a.Width = maxside
-		a.Image = imaging.Resize(a.Image, maxside, maxside, filter)
+		a.Image = imaging.Resize(a.Image, a.Width, a.Height, filter)
 	}
 
 	return a
@@ -418,18 +427,16 @@ func (a *Image) Instagram() *Image {
 }
 
 func (a *Image) ResizeWidth(width int) *Image {
-	if width == a.Width {
+	if width > a.Width {
 		return a
 	}
 	p := float64(a.Width) / float64(a.Height) //800 / 600 = 1.3333
 	height := int(float64(width) / p)
-
 	img := imaging.Resize(a.Image, width, height, a.Filter)
-	n := *a
-	n.Image = img
-	n.Width = width
-	n.Height = height
-	return &n
+	a.Image = img
+	a.Width = width
+	a.Height = height
+	return a
 }
 
 func (a *Image) ResizeHeight(height int) *Image {
@@ -439,11 +446,10 @@ func (a *Image) ResizeHeight(height int) *Image {
 	p := float64(a.Height) / float64(a.Width) //800 / 600 = 1.3333
 	width := int(float64(height) / p)
 	img := imaging.Resize(a.Image, width, height, a.Filter)
-	n := *a
-	n.Image = img
-	n.Width = width
-	n.Height = height
-	return &n
+	a.Image = img
+	a.Width = width
+	a.Height = height
+	return a
 }
 
 // Thumbnail
@@ -456,53 +462,53 @@ func (a *Image) Square(size int) *Image {
 	return &n
 }
 
-// Decode is image.Decode handling orientation in EXIF tags if exists.
-// Requires io.ReadSeeker instead of io.Reader.
-func Decode(reader io.ReadSeeker) (image.Image, string, error) {
-	img, fmt, err := image.Decode(reader)
-	if err != nil {
-		return img, fmt, err
-	}
-	reader.Seek(0, io.SeekStart)
-	orientation := getOrientation(reader)
-	switch orientation {
-	case "1":
-	case "2":
-		img = imaging.FlipV(img)
-	case "3":
-		img = imaging.Rotate180(img)
-	case "4":
-		img = imaging.Rotate180(imaging.FlipV(img))
-	case "5":
-		img = imaging.Rotate270(imaging.FlipV(img))
-	case "6":
-		img = imaging.Rotate270(img)
-	case "7":
-		img = imaging.Rotate90(imaging.FlipV(img))
-	case "8":
-		img = imaging.Rotate90(img)
-	}
+// // Decode is image.Decode handling orientation in EXIF tags if exists.
+// // Requires io.ReadSeeker instead of io.Reader.
+// func Decode(reader io.ReadSeeker) (image.Image, string, error) {
+// 	img, fmt, err := image.Decode(reader)
+// 	if err != nil {
+// 		return img, fmt, err
+// 	}
+// 	reader.Seek(0, io.SeekStart)
+// 	orientation := getOrientation(reader)
+// 	switch orientation {
+// 	case "1":
+// 	case "2":
+// 		img = imaging.FlipV(img)
+// 	case "3":
+// 		img = imaging.Rotate180(img)
+// 	case "4":
+// 		img = imaging.Rotate180(imaging.FlipV(img))
+// 	case "5":
+// 		img = imaging.Rotate270(imaging.FlipV(img))
+// 	case "6":
+// 		img = imaging.Rotate270(img)
+// 	case "7":
+// 		img = imaging.Rotate90(imaging.FlipV(img))
+// 	case "8":
+// 		img = imaging.Rotate90(img)
+// 	}
 
-	return img, fmt, err
-}
+// 	return img, fmt, err
+// }
 
-func getOrientation(reader io.Reader) string {
-	x, err := exif.Decode(reader)
-	if err != nil {
-		return "1"
-	}
-	if x != nil {
-		orient, err := x.Get(exif.Orientation)
-		if err != nil {
-			return "1"
-		}
-		if orient != nil {
-			return orient.String()
-		}
-	}
+// func getOrientation(reader io.Reader) string {
+// 	x, err := exif.Decode(reader)
+// 	if err != nil {
+// 		return "1"
+// 	}
+// 	if x != nil {
+// 		orient, err := x.Get(exif.Orientation)
+// 		if err != nil {
+// 			return "1"
+// 		}
+// 		if orient != nil {
+// 			return orient.String()
+// 		}
+// 	}
 
-	return "1"
-}
+// 	return "1"
+// }
 
 type subImager interface {
 	SubImage(r image.Rectangle) image.Image
