@@ -242,10 +242,7 @@ func (a *Image) Export(quality ...int) (file *bytes.Buffer) {
 	case "gif":
 		gif.Encode(file, a.Image, &gif.Options{})
 	case "webp":
-		res, _ := Webp(a.Image)
-		if res.Len() > 0 {
-			file = &res
-		}
+		file, _ = Webp(a.Image)
 	default:
 		return
 	}
@@ -271,7 +268,8 @@ func (a *Image) PNG() (file *bytes.Buffer) {
 	return
 }
 
-func (a *Image) Webp() (res bytes.Buffer) {
+// best for png only, something with transparency
+func (a *Image) Webp() (res *bytes.Buffer) {
 	res, _ = Webp(a.Image)
 	return
 }
@@ -316,6 +314,8 @@ func (a *Image) Base64HTML(quality ...int) string {
 		res = a.PNG().Bytes()
 	case TypeGIF:
 		res = a.GIF().Bytes()
+	case TypeWebp:
+		res = a.Webp().Bytes()
 	}
 	return fmt.Sprintf("data:image/%s;base64,%s", a.Ext, base64.StdEncoding.EncodeToString(res))
 }

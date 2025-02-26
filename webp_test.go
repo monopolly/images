@@ -22,10 +22,10 @@ func TestWebp(t *testing.T) {
 	a := assert.New(t)
 	_ = a
 
-	path := "temp/big.png"
+	path := "temp/logo.png"
 	r, _ := NewFromFile(path)
 
 	res := r.Webp()
-	file.Save("temp/big.webp", res.Bytes())
+	file.Save("temp/logo.webp", res.Bytes())
 
 }

@@ -7,8 +7,9 @@ import (
 	"github.com/HugoSmits86/nativewebp"
 )
 
-func Webp(img image.Image) (res bytes.Buffer, err error) {
-	err = nativewebp.Encode(&res, img, nil)
+func Webp(img image.Image) (res *bytes.Buffer, err error) {
+	res = new(bytes.Buffer)
+	err = nativewebp.Encode(res, img, nil)
 	if err != nil {
 		return
 	}
