@@ -10,13 +10,13 @@ import (
 type pngQuality int
 
 const (
-	BestCompression   = pngQuality(1)
-	MediumCompression = pngQuality(10)
-	FastCompression   = pngQuality(20)
+	PNGQualityBestCompression   = pngQuality(1)
+	PNGQualityMediumCompression = pngQuality(10)
+	PNGQualityFastCompression   = pngQuality(20)
 )
 
 // brew install pngquant linux: https://pkgs.org/download/pngquant
-func CompressPNG(v []byte, level pngQuality) (res []byte, err error) {
+func ExternalCompressPNG(v []byte, level pngQuality) (res []byte, err error) {
 	cmd := exec.Command("pngquant", "-", "--strip", "--speed", fmt.Sprint(level))
 	cmd.Stdin = strings.NewReader(string(v))
 	var o bytes.Buffer
@@ -44,7 +44,7 @@ func CompressPNG(v []byte, level pngQuality) (res []byte, err error) {
 // }
 
 // brew install jpegoptim quality 1-100
-func CompressJPG(v []byte, quality int) (res []byte, err error) {
+func ExternalCompressJPG(v []byte, quality int) (res []byte, err error) {
 	cmd := exec.Command("jpegoptim", "-f", "-s", "--stdin", "--stdout", "--all-progressive", "--max="+fmt.Sprint(quality))
 	cmd.Stdin = strings.NewReader(string(v))
 	var o bytes.Buffer

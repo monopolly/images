@@ -25,7 +25,7 @@ func TestCompressionPNG(t *testing.T) {
 	path := "temp/big.png"
 	path2 := "temp/big_compressed.png"
 	v := file.OpenE(path)
-	c, err := CompressPNG(v, BestCompression)
+	c, err := ExternalCompressPNG(v, PNGQualityBestCompression)
 	if err != nil {
 		panic(err)
 	}
@@ -44,7 +44,7 @@ func TestCompressionJPG(t *testing.T) {
 	path := "temp/big.jpg"
 	path2 := "temp/big_compressed2.jpg"
 	v := file.OpenE(path)
-	c, err := CompressJPG(v, 70)
+	c, err := ExternalCompressJPG(v, 70)
 	if err != nil {
 		panic(err)
 	}

@@ -191,14 +191,16 @@ func (a *Image) CropBackground() *Image {
 	return a
 }
 
-func (a *Image) Compress() *Image {
-	switch a.Ext {
-	case "png":
-		//a.Image = lossypng.Compress(a.Image, lossypng.NoConversion, 10)
-	case "jpg":
-		//mozjpegbin.Encode(w, m, o)
-	}
-	return a
+// brew install pngquant linux: https://pkgs.org/download/pngquant
+func (a *Image) ExternalCompressPNG(level pngQuality) (res []byte) {
+	res, _ = ExternalCompressPNG(a.PNG().Bytes(), level)
+	return
+}
+
+// brew install jpegoptim quality 1-100
+func (a *Image) ExternalCompressJPG(quality int) (res []byte) {
+	res, _ = ExternalCompressJPG(a.JPG().Bytes(), quality)
+	return
 }
 
 // убирает белые и прозрачные пиксели
