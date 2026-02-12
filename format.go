@@ -23,6 +23,9 @@ func (a *Format) Base64(quality ...int) string {
 	case TypePNG:
 		ext = "png"
 		res = a.image.PNG().Bytes()
+	case TypeAvif:
+		ext = "avif"
+		res = a.image.Avif().Bytes()
 	case TypeGIF:
 		ext = "gif"
 		res = a.image.GIF().Bytes()

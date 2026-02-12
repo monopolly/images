@@ -32,6 +32,12 @@ func Decode(r io.Reader) (image.Image, string, error) {
 	return fixOrientation(img, orientation), format, nil
 }
 
+// Decode decodes an image and changes its orientation
+// according to the EXIF orientation tag (if present).
+func DecodeWithoutExif(r io.Reader) (image.Image, string, error) {
+	return image.Decode(r)
+}
+
 // DecodeConfig decodes the color model and dimensions of an image
 // with the respect to the EXIF orientation tag (if present).
 //

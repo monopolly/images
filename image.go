@@ -9,6 +9,7 @@ import (
 	"image/gif"
 	"image/jpeg"
 	"image/png"
+	"strings"
 
 	"github.com/disintegration/imaging"
 	"github.com/monopolly/errors"
@@ -25,6 +26,7 @@ const (
 	TypePNG
 	TypeGIF
 	TypeWebp
+	TypeAvif
 )
 
 const (
@@ -64,12 +66,10 @@ func New(img []byte) (a *Image, err errors.E) {
 	image.RegisterFormat("webp", "webp", webp.Decode, webp.DecodeConfig)
 
 	var er error
-	if IsBase64(img) {
-		img, er = Base64ToFile(img)
-		if er != nil {
-			err = errors.File("Cant parse base64 file")
-			return
-		}
+	// if IsBase64(string(img)) {
+	imgDecoded, _ := Base64ToFile(string(img))
+	if imgDecoded != nil {
+		img = imgDecoded
 	}
 
 	reader := bytes.NewReader(img)
@@ -88,12 +88,101 @@ func New(img []byte) (a *Image, err errors.E) {
 	case "jpg", "jpeg":
 		a.Ext = "jpg"
 		a.Type = TypeJPG
+		a.Mimetype = "image/jpeg"
 	case "png":
 		a.Type = TypePNG
+		a.Mimetype = "image/png"
 	case "gif":
 		a.Type = TypeGIF
+		a.Mimetype = "image/gif"
 	case "webp":
 		a.Type = TypeWebp
+		a.Mimetype = "image/webp"
+	case "avif":
+		a.Type = TypeAvif
+		a.Mimetype = "image/avif"
+	}
+
+	a.Width = a.Image.Bounds().Size().X
+	a.Height = a.Image.Bounds().Size().Y
+
+	switch {
+	case a.Width == a.Height:
+		a.Shape = ShapeBox
+		a.Ratio = 1
+	case a.Width > a.Height:
+		a.Shape = ShaperLandscape
+		a.Ratio = float64(a.Width) / float64(a.Height)
+	case a.Width < a.Height:
+		a.Shape = ShapePortrait
+		a.Ratio = float64(a.Height) / float64(a.Width)
+	}
+
+	a.Filter = imaging.CatmullRom
+	a.Quality = 80
+
+	/* iccreader := bytes.NewReader(img)
+	icc, err := iccjpeg.GetICCBuf(iccreader)
+	if err != nil {
+		return
+	}
+
+	fmt.Println("has icc") */
+	/* a.ICC = icc */
+
+	return
+}
+
+/* даем обычный файл или base64 и получаем картинку с параметрами */
+func NewWithoutExif(img []byte, base64 ...bool) (a *Image, err errors.E) {
+
+	if img == nil {
+		return nil, errors.Empty()
+	}
+
+	image.RegisterFormat("jpeg", "jpeg", jpeg.Decode, jpeg.DecodeConfig)
+	image.RegisterFormat("png", "png", png.Decode, png.DecodeConfig)
+	image.RegisterFormat("gif", "gif", gif.Decode, gif.DecodeConfig)
+	image.RegisterFormat("webp", "webp", webp.Decode, webp.DecodeConfig)
+
+	var er error
+	if IsBase64(string(img)) || len(base64) > 0 {
+		img, er = Base64ToFile(string(img))
+		if er != nil {
+			err = errors.File(er)
+			return
+		}
+	}
+
+	reader := bytes.NewReader(img)
+
+	a = new(Image)
+	a.Source = img
+	a.Size = len(img)
+
+	a.Image, a.Ext, er = DecodeWithoutExif(reader)
+	if er != nil {
+		err = errors.File("Cant decode image: " + er.Error())
+		return
+	}
+
+	switch a.Ext {
+	case "jpg", "jpeg":
+		a.Ext = "jpg"
+		a.Type = TypeJPG
+		a.Mimetype = "image/jpeg"
+	case "png":
+		a.Type = TypePNG
+		a.Mimetype = "image/png"
+	case "gif":
+		a.Type = TypeGIF
+		a.Mimetype = "image/gif"
+	case "webp":
+		a.Type = TypeWebp
+		a.Mimetype = "image/webp"
+	case "avif":
+		a.Type = TypeAvif
+		a.Mimetype = "image/avif"
 	}
 
 	a.Width = a.Image.Bounds().Size().X
@@ -156,17 +245,18 @@ var PresetInterior = Preset{
 } */
 
 type Image struct {
-	Source  []byte
-	Image   image.Image
-	Ext     string  //png,jpg
-	Type    int     //png,jpg
-	Shape   int     //box,landscape
-	Ratio   float64 //0.235,0.42114
-	Width   int     //640
-	Height  int     //480
-	Quality int     //80
-	Size    int     //245624 bytes
-	Filter  imaging.ResampleFilter
+	Source   []byte
+	Image    image.Image
+	Ext      string  //png,jpg
+	Mimetype string  //image/jpeg
+	Type     int     //png,jpg
+	Shape    int     //box,landscape
+	Ratio    float64 //0.235,0.42114
+	Width    int     //640
+	Height   int     //480
+	Quality  int     //80
+	Size     int     //245624 bytes
+	Filter   imaging.ResampleFilter
 }
 
 // проходит все пиксели
@@ -201,6 +291,34 @@ func (a *Image) ExternalCompressPNG(level pngQuality) (res []byte) {
 func (a *Image) ExternalCompressJPG(quality int) (res []byte) {
 	res, _ = ExternalCompressJPG(a.JPG().Bytes(), quality)
 	return
+}
+
+// brew install jpegoptim quality 1-100
+func (a *Image) Compress() (res []byte) {
+	switch a.Type {
+	case TypeJPG:
+		res = a.JPG(80).Bytes()
+		b, _ := ExternalCompressJPG(res, 80)
+		switch b {
+		case nil:
+			return
+		default:
+			return b
+		}
+	case TypePNG:
+		res = a.PNG().Bytes()
+		b, _ := ExternalCompressPNG(res, PNGQualityMediumCompression)
+		switch b {
+		case nil:
+			return
+		default:
+			return b
+		}
+	default:
+		return a.Export(80).Bytes()
+
+	}
+
 }
 
 // убирает белые и прозрачные пиксели
@@ -244,7 +362,7 @@ func (a *Image) Export(quality ...int) (file *bytes.Buffer) {
 	case "webp":
 		file, _ = Webp(a.Image)
 	default:
-		return
+		jpeg.Encode(file, a.Image, &jpeg.Options{Quality: 80})
 	}
 	return
 }
@@ -274,12 +392,22 @@ func (a *Image) Webp() (res *bytes.Buffer) {
 	return
 }
 
+// best for png only, something with transparency
+func (a *Image) Avif(quality ...int) (res *bytes.Buffer) {
+	q := 50
+	if len(quality) > 0 {
+		q = quality[0]
+	}
+	b, _ := Avifs(a.Image, q)
+	return &b
+}
+
 func (a *Image) PNGBase64HTML() string {
 	return fmt.Sprintf("data:image/png;base64,%s", base64.StdEncoding.EncodeToString(a.PNG().Bytes()))
 }
 
 func (a *Image) JPGBase64HTML(quality ...int) string {
-	return fmt.Sprintf("data:image/jpg;base64,%s", base64.StdEncoding.EncodeToString(a.JPG(quality...).Bytes()))
+	return fmt.Sprintf("data:image/jpeg;base64,%s", base64.StdEncoding.EncodeToString(a.JPG(quality...).Bytes()))
 }
 
 func (a *Image) GIFBase64HTML(options ...*gif.Options) string {
@@ -297,27 +425,31 @@ func (a *Image) JPG(quality ...int) (file *bytes.Buffer) {
 	return
 }
 
-func (a *Image) Origin() (file []byte) {
-	return a.Source
-}
-
 func (a *Image) Base64(quality ...int) string {
 	return base64.StdEncoding.EncodeToString(a.Export(quality...).Bytes())
 }
 
 func (a *Image) Base64HTML(quality ...int) string {
 	var res []byte
+	var typ string
 	switch a.Type {
 	case TypeJPG:
 		res = a.JPG(quality...).Bytes()
+		typ = "jpeg"
 	case TypePNG:
 		res = a.PNG().Bytes()
+		typ = "png"
 	case TypeGIF:
 		res = a.GIF().Bytes()
+		typ = "gif"
 	case TypeWebp:
 		res = a.Webp().Bytes()
+		typ = "webp"
+	case TypeAvif:
+		res = a.Avif().Bytes()
+		typ = "avif"
 	}
-	return fmt.Sprintf("data:image/%s;base64,%s", a.Ext, base64.StdEncoding.EncodeToString(res))
+	return fmt.Sprintf("data:image/%s;base64,%s", typ, base64.StdEncoding.EncodeToString(res))
 }
 
 func (a *Image) Sharpen(v ...float64) *Image {
@@ -391,6 +523,11 @@ func (a *Image) ResizeOld(size ...int) *Image {
 
 /* width, height */
 func (a *Image) Resize(maxside int) *Image {
+
+	if a.Width < maxside && a.Height < maxside {
+		return a
+	}
+
 	filter := imaging.Cosine
 	// fmt.Println(a.Width, a.Height, a.Size, a.Ratio)
 	switch {
@@ -531,4 +668,108 @@ func (a *Image) SmartAvatar(size int) (i *Image) {
 	}
 	i.Image = im.SubImage(topCrop)
 	return a
+}
+
+func HTMLBase64(body []byte, imageType int) string {
+	var typ string
+	switch imageType {
+	case TypePNG:
+		typ = "png"
+	case TypeGIF:
+		typ = "gif"
+	case TypeWebp:
+		typ = "webp"
+	case TypeAvif:
+		typ = "avif"
+	default:
+		typ = "jpeg"
+	}
+
+	return fmt.Sprintf("data:image/%s;base64,%s", typ, base64.StdEncoding.EncodeToString(body))
+}
+
+func IsBase64(s string) bool {
+
+	// Case 1: data URL
+	if IsBase64ImageDataURL(s) {
+		return true
+	}
+
+	// Case 2: raw base64
+	return DecodeBase64(s) == nil
+}
+
+func IsBase64ImageDataURL(s string) bool {
+	return strings.HasPrefix(s, "data:image/") &&
+		strings.Contains(s, ";base64,")
+}
+
+func DecodeBase64(s string) (err error) {
+	// remove whitespace/newlines
+	s = strings.TrimSpace(s)
+
+	// standard base64
+	_, err = base64.StdEncoding.DecodeString(s)
+	if err != nil {
+		return
+	}
+
+	// URL-safe base64
+	_, err = base64.RawStdEncoding.DecodeString(s)
+	return
+}
+
+func IsImage(b []byte) bool {
+	return DetectImageType(b) > 0
+}
+
+func DetectImageType(b []byte) (types int) {
+	if len(b) < 12 {
+		return
+	}
+
+	switch {
+	case bytes.HasPrefix(b, []byte{0xFF, 0xD8, 0xFF}):
+		return TypeJPG // true // JPEG
+	case bytes.HasPrefix(b, []byte{0x89, 'P', 'N', 'G'}):
+		return TypePNG // PNG
+	case bytes.HasPrefix(b, []byte("GIF87a")),
+		bytes.HasPrefix(b, []byte("GIF89a")):
+		return TypeGIF // GIF
+	case bytes.HasPrefix(b, []byte("RIFF")) && bytes.Contains(b[:12], []byte("WEBP")):
+		return TypeWebp // WEBP
+	case isAVIF(b):
+		return TypeAvif
+	default:
+		return
+	}
+}
+
+func isAVIF(b []byte) bool {
+	if len(b) < 12 {
+		return false
+	}
+
+	// ISO BMFF: size(4) + "ftyp"(4) + brand(4)
+	return bytes.Equal(b[4:8], []byte("ftyp")) &&
+		(bytes.Equal(b[8:12], []byte("avif")) ||
+			bytes.Equal(b[8:12], []byte("avis")))
+}
+
+// remove data url data:image/
+func CleanBase64(s string) string {
+	s = strings.TrimSpace(s)
+
+	const prefix = "data:image/"
+	if !strings.HasPrefix(s, prefix) {
+		return s
+	}
+
+	// ищем разделитель ";base64,"
+	idx := strings.Index(s, ";base64,")
+	if idx == -1 {
+		return s
+	}
+
+	return s[idx+len(";base64,"):]
 }
