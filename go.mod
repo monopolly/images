@@ -1,13 +1,13 @@
 module github.com/monopolly/images
 
-go 1.24.0
+go 1.25.0
 
 require (
 	github.com/EdlinOrg/prominentcolor v1.0.0
 	github.com/HugoSmits86/nativewebp v1.2.1
 	github.com/disintegration/gift v1.2.1
 	github.com/disintegration/imaging v1.6.2
-	github.com/gen2brain/avif v0.4.4
+	github.com/gen2brain/avif v0.6.0
 	github.com/monopolly/console v0.0.0-20230308112716-990e1f7d083c
 	github.com/monopolly/errors v0.0.0-20250310120250-e679cf81980b
 	github.com/monopolly/file v0.0.0-20230727065807-012e836cbd0b
@@ -25,7 +25,7 @@ require (
 	github.com/dc0d/retry v1.2.0 // indirect
 	github.com/decred/dcrd/dcrec/secp256k1/v4 v4.0.1 // indirect
 	github.com/dustin/go-humanize v1.0.1 // indirect
-	github.com/ebitengine/purego v0.8.3 // indirect
+	github.com/ebitengine/purego v0.10.1 // indirect
 	github.com/fatih/color v1.14.1 // indirect
 	github.com/fsnotify/fsnotify v1.5.4 // indirect
 	github.com/jackc/chunkreader/v2 v2.0.1 // indirect
@@ -54,7 +54,7 @@ require (
 	github.com/rogpeppe/go-internal v1.14.1 // indirect
 	github.com/rs/xid v1.5.0 // indirect
 	github.com/shamaton/msgpack v1.2.1 // indirect
-	github.com/tetratelabs/wazero v1.9.0 // indirect
+	github.com/tetratelabs/wazero v1.12.0 // indirect
 	github.com/tidwall/gjson v1.14.1 // indirect
 	github.com/tidwall/match v1.1.1 // indirect
 	github.com/tidwall/pretty v1.2.0 // indirect
@@ -62,7 +62,7 @@ require (
 	github.com/valyala/bytebufferpool v1.0.0 // indirect
 	github.com/valyala/fasthttp v1.38.0 // indirect
 	golang.org/x/crypto v0.20.0 // indirect
-	golang.org/x/sys v0.26.0 // indirect
+	golang.org/x/sys v0.44.0 // indirect
 	golang.org/x/text v0.32.0 // indirect
 	gopkg.in/yaml.v3 v3.0.1 // indirect
 )

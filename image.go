@@ -43,8 +43,20 @@ func init() {
 	image.RegisterFormat("png", "png", png.Decode, png.DecodeConfig)
 	image.RegisterFormat("gif", "gif", gif.Decode, gif.DecodeConfig)
 	image.RegisterFormat("webp", "webp", webp.Decode, webp.DecodeConfig)
-	image.RegisterFormat("avif", "????ftypavif", avif.Decode, avif.DecodeConfig)
-	image.RegisterFormat("avif", "????ftypavis", avif.Decode, avif.DecodeConfig)
+	image.RegisterFormat("avif", "????ftypavif", decodeAVIF, decodeAVIFConfig)
+	image.RegisterFormat("avif", "????ftypavis", decodeAVIF, decodeAVIFConfig)
+}
+
+// decodeAVIF / decodeAVIFConfig оборачивают функции github.com/gen2brain/avif,
+// чтобы подходить под сигнатуру image.RegisterFormat независимо от версии пакета:
+// начиная с v0.5.0 avif.Decode стал вариативным — Decode(r io.Reader, opts ...Options),
+// и его больше нельзя передать напрямую как func(io.Reader) (image.Image, error).
+func decodeAVIF(r io.Reader) (image.Image, error) {
+	return avif.Decode(r)
+}
+
+func decodeAVIFConfig(r io.Reader) (image.Config, error) {
+	return avif.DecodeConfig(r)
 }
 
 func NewFromFile(path string) (a *Image, err error) {
