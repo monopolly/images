@@ -58,22 +58,6 @@ func distance(x, y float64) float64 {
 	return (x - y) * (x - y)
 }
 
-// min is minimum of two uint32
-func min(a, b uint32) uint32 {
-	if a < b {
-		return a
-	}
-	return b
-}
-
-// max is maximum of two uint32
-func max(a, b uint32) uint32 {
-	if a > b {
-		return a
-	}
-	return b
-}
-
 // colorToXYZ returns CIE XYZ representation of color.
 // https://en.wikipedia.org/wiki/Color_model#CIE_XYZ_color_space
 func colorToXYZ(color color.Color) (x, y, z float64) {

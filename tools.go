@@ -15,6 +15,28 @@ import (
 // от base64 bombs
 const maxImageBytes = 20 << 20 // 20 MB
 
+// base64Encodings — поддерживаемые варианты кодирования base64,
+// пробуются по порядку.
+var base64Encodings = []*base64.Encoding{
+	base64.StdEncoding,
+	base64.RawStdEncoding,
+	base64.URLEncoding,
+	base64.RawURLEncoding,
+}
+
+// stripBase64Whitespace убирает пробелы и переводы строк, которыми часто
+// форматируют base64.
+func stripBase64Whitespace(s string) string {
+	return strings.Map(func(r rune) rune {
+		switch r {
+		case ' ', '\n', '\r', '\t':
+			return -1
+		default:
+			return r
+		}
+	}, s)
+}
+
 func DetectImageMIME(b []byte) (string, bool) {
 	if len(b) == 0 {
 		return "", false
@@ -60,14 +82,7 @@ func NormalizeImageBytes(input []byte) ([]byte, error) {
 	s = StripDataImageBase64Prefix(s)
 
 	// убираем пробелы / переводы строк
-	s = strings.Map(func(r rune) rune {
-		switch r {
-		case ' ', '\n', '\r', '\t':
-			return -1
-		default:
-			return r
-		}
-	}, s)
+	s = stripBase64Whitespace(s)
 
 	// быстрый size check
 	if len(s)*3/4 > maxImageBytes {
@@ -75,17 +90,9 @@ func NormalizeImageBytes(input []byte) ([]byte, error) {
 	}
 
 	// пробуем разные base64 encoding
-	encs := []*base64.Encoding{
-		base64.StdEncoding,
-		base64.RawStdEncoding,
-		base64.URLEncoding,
-		base64.RawURLEncoding,
-	}
-
 	var decoded []byte
 	var err error
-
-	for _, enc := range encs {
+	for _, enc := range base64Encodings {
 		decoded, err = enc.DecodeString(s)
 		if err == nil {
 			break
@@ -95,10 +102,10 @@ func NormalizeImageBytes(input []byte) ([]byte, error) {
 		return nil, errors.New("invalid base64 image")
 	}
 
-	// 3️⃣ Проверяем, что после декода это картинка
-	// if _, ok := DetectImageMIME(decoded); !ok {
-	// 	return nil, errors.New("decoded data is not an image")
-	// }
+	// 3️⃣ Проверяем, что после декода это действительно картинка
+	if _, ok := DetectImageMIME(decoded); !ok {
+		return nil, errors.New("decoded data is not an image")
+	}
 
 	return decoded, nil
 }
@@ -121,14 +128,7 @@ func DecodeBase64Image(input string, maxDecodedBytes int64) ([]byte, error) {
 	s := StripDataImageBase64Prefix(input)
 
 	// убираем пробелы/переносы (часто base64 форматируют)
-	s = strings.Map(func(r rune) rune {
-		switch r {
-		case ' ', '\n', '\r', '\t':
-			return -1
-		default:
-			return r
-		}
-	}, strings.TrimSpace(s))
+	s = stripBase64Whitespace(strings.TrimSpace(s))
 
 	// быстрый пред-чек, чтобы не пытаться декодировать гигабайты
 	// оценка: decoded ~= len(s)*3/4
@@ -137,15 +137,8 @@ func DecodeBase64Image(input string, maxDecodedBytes int64) ([]byte, error) {
 	}
 
 	// пробуем разные варианты base64
-	encodings := []*base64.Encoding{
-		base64.StdEncoding,
-		base64.RawStdEncoding,
-		base64.URLEncoding,
-		base64.RawURLEncoding,
-	}
-
 	var lastErr error
-	for _, enc := range encodings {
+	for _, enc := range base64Encodings {
 		r := base64.NewDecoder(enc, strings.NewReader(s))
 
 		// жестко ограничиваем реальный вывод
@@ -175,31 +168,8 @@ func DecodeBase64Image(input string, maxDecodedBytes int64) ([]byte, error) {
 }
 
 func Base64ToFile(data string) (res []byte, err error) {
-
 	return NormalizeImageBytes([]byte(data))
-
-	// data = StripDataImageBase64Prefix(data)
-
-	// reader := base64.NewDecoder(base64.StdEncoding, strings.NewReader(data))
-	// buff := bytes.Buffer{}
-	// _, err = buff.ReadFrom(reader)
-	// if err != nil {
-	// 	return Base64ToFileRaw(data)
-	// }
-	// return buff.Bytes(), nil
 }
-
-// func Base64ToFileRaw(data string) (res []byte, err error) {
-// 	data = CleanBase64(data)
-
-// 	reader := base64.NewDecoder(base64.RawStdEncoding, strings.NewReader(data))
-// 	buff := bytes.Buffer{}
-// 	_, err = buff.ReadFrom(reader)
-// 	if err != nil {
-// 		return
-// 	}
-// 	return buff.Bytes(), nil
-// }
 
 func rankColorsCount(colorsList map[color.Color]int) PairList {
 	pl := make(PairList, len(colorsList))
@@ -223,6 +193,7 @@ func (p PairList) Len() int           { return len(p) }
 func (p PairList) Less(i, j int) bool { return p[i].Value < p[j].Value }
 func (p PairList) Swap(i, j int)      { p[i], p[j] = p[j], p[i] }
 
+// Rgb2Hex формирует hex-строку (без #) из 16-битных компонент color.RGBA().
 func Rgb2Hex(r, g, b uint32, a ...uint32) string {
-	return fmt.Sprintf("%x%x%x", uint8(r/257), uint8(g/257), uint8(b/257))
+	return fmt.Sprintf("%02x%02x%02x", uint8(r/257), uint8(g/257), uint8(b/257))
 }

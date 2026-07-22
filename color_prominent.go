@@ -47,14 +47,12 @@ func (a *Image) DominantColors(count int) (colors []*Color) {
 
 // most light from dominant colors in hex
 func (a *Image) DominantColorLight() (color *Color) {
+	var best float64
 	for _, x := range a.DominantColors(2) {
-		if color == nil {
+		if l := x.HSL().Lightness; color == nil || l > best {
 			color = x
-		}
-		if x.HSL().Lightness > color.HSL().Lightness {
-			color = x
+			best = l
 		}
 	}
 	return
-
 }

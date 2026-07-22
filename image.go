@@ -9,9 +9,11 @@ import (
 	"image/gif"
 	"image/jpeg"
 	"image/png"
+	"io"
 	"strings"
 
 	"github.com/disintegration/imaging"
+	"github.com/gen2brain/avif"
 	"github.com/monopolly/errors"
 	"github.com/monopolly/file"
 	"github.com/muesli/smartcrop"
@@ -36,6 +38,15 @@ const (
 	ShaperLandscape
 )
 
+func init() {
+	image.RegisterFormat("jpeg", "jpeg", jpeg.Decode, jpeg.DecodeConfig)
+	image.RegisterFormat("png", "png", png.Decode, png.DecodeConfig)
+	image.RegisterFormat("gif", "gif", gif.Decode, gif.DecodeConfig)
+	image.RegisterFormat("webp", "webp", webp.Decode, webp.DecodeConfig)
+	image.RegisterFormat("avif", "????ftypavif", avif.Decode, avif.DecodeConfig)
+	image.RegisterFormat("avif", "????ftypavis", avif.Decode, avif.DecodeConfig)
+}
+
 func NewFromFile(path string) (a *Image, err error) {
 	b, err := file.Open(path)
 	if err != nil {
@@ -46,147 +57,73 @@ func NewFromFile(path string) (a *Image, err error) {
 }
 
 func NewFromFileE(path string) (a *Image, err error) {
-	b, err := file.Open(path)
-	if err != nil {
-		return
-	}
-	return New(b)
+	return NewFromFile(path)
 }
 
 /* даем обычный файл или base64 и получаем картинку с параметрами */
 func New(img []byte) (a *Image, err errors.E) {
-
-	if img == nil {
-		return nil, errors.Empty()
-	}
-
-	image.RegisterFormat("jpeg", "jpeg", jpeg.Decode, jpeg.DecodeConfig)
-	image.RegisterFormat("png", "png", png.Decode, png.DecodeConfig)
-	image.RegisterFormat("gif", "gif", gif.Decode, gif.DecodeConfig)
-	image.RegisterFormat("webp", "webp", webp.Decode, webp.DecodeConfig)
-
-	var er error
-	// if IsBase64(string(img)) {
-	imgDecoded, _ := Base64ToFile(string(img))
-	if imgDecoded != nil {
-		img = imgDecoded
-	}
-
-	reader := bytes.NewReader(img)
-
-	a = new(Image)
-	a.Source = img
-	a.Size = len(img)
-
-	a.Image, a.Ext, er = Decode(reader)
-	if er != nil {
-		err = errors.File("Cant decode image: " + er.Error())
-		return
-	}
-
-	switch a.Ext {
-	case "jpg", "jpeg":
-		a.Ext = "jpg"
-		a.Type = TypeJPG
-		a.Mimetype = "image/jpeg"
-	case "png":
-		a.Type = TypePNG
-		a.Mimetype = "image/png"
-	case "gif":
-		a.Type = TypeGIF
-		a.Mimetype = "image/gif"
-	case "webp":
-		a.Type = TypeWebp
-		a.Mimetype = "image/webp"
-	case "avif":
-		a.Type = TypeAvif
-		a.Mimetype = "image/avif"
-	}
-
-	a.Width = a.Image.Bounds().Size().X
-	a.Height = a.Image.Bounds().Size().Y
-
-	switch {
-	case a.Width == a.Height:
-		a.Shape = ShapeBox
-		a.Ratio = 1
-	case a.Width > a.Height:
-		a.Shape = ShaperLandscape
-		a.Ratio = float64(a.Width) / float64(a.Height)
-	case a.Width < a.Height:
-		a.Shape = ShapePortrait
-		a.Ratio = float64(a.Height) / float64(a.Width)
-	}
-
-	a.Filter = imaging.CatmullRom
-	a.Quality = 80
-
-	/* iccreader := bytes.NewReader(img)
-	icc, err := iccjpeg.GetICCBuf(iccreader)
-	if err != nil {
-		return
-	}
-
-	fmt.Println("has icc") */
-	/* a.ICC = icc */
-
-	return
+	return newImage(img, Decode)
 }
 
-/* даем обычный файл или base64 и получаем картинку с параметрами */
-func NewWithoutExif(img []byte, base64 ...bool) (a *Image, err errors.E) {
+/* даем обычный файл или base64 и получаем картинку с параметрами (без учёта EXIF-ориентации) */
+func NewWithoutExif(img []byte, _ ...bool) (a *Image, err errors.E) {
+	return newImage(img, DecodeWithoutExif)
+}
 
-	if img == nil {
+// newImage декодирует бинарную картинку или base64 и заполняет метаданные.
+// decode задаёт способ декодирования (с учётом EXIF или без).
+func newImage(img []byte, decode func(io.Reader) (image.Image, string, error)) (*Image, errors.E) {
+	if len(img) == 0 {
 		return nil, errors.Empty()
 	}
 
-	image.RegisterFormat("jpeg", "jpeg", jpeg.Decode, jpeg.DecodeConfig)
-	image.RegisterFormat("png", "png", png.Decode, png.DecodeConfig)
-	image.RegisterFormat("gif", "gif", gif.Decode, gif.DecodeConfig)
-	image.RegisterFormat("webp", "webp", webp.Decode, webp.DecodeConfig)
-
-	var er error
-	if IsBase64(string(img)) || len(base64) > 0 {
-		img, er = Base64ToFile(string(img))
-		if er != nil {
-			err = errors.File(er)
-			return
+	// Если это ещё не бинарная картинка — пробуем раскодировать base64,
+	// но подставляем результат только когда после декода это действительно
+	// картинка. Так валидный бинарник никогда не портится.
+	if !IsImage(img) {
+		if decoded, e := Base64ToFile(string(img)); e == nil && IsImage(decoded) {
+			img = decoded
 		}
 	}
 
-	reader := bytes.NewReader(img)
-
-	a = new(Image)
+	a := new(Image)
 	a.Source = img
 	a.Size = len(img)
 
-	a.Image, a.Ext, er = DecodeWithoutExif(reader)
+	var er error
+	a.Image, a.Ext, er = decode(bytes.NewReader(img))
 	if er != nil {
-		err = errors.File("Cant decode image: " + er.Error())
-		return
+		return nil, errors.File("Cant decode image: " + er.Error())
 	}
 
+	a.applyMeta()
+	return a, nil
+}
+
+// applyMeta заполняет формат, размеры, форму и параметры по умолчанию
+// на основе уже декодированного a.Image и a.Ext.
+func (a *Image) applyMeta() {
 	switch a.Ext {
 	case "jpg", "jpeg":
 		a.Ext = "jpg"
 		a.Type = TypeJPG
-		a.Mimetype = "image/jpeg"
+		a.Mime = "image/jpeg"
 	case "png":
 		a.Type = TypePNG
-		a.Mimetype = "image/png"
+		a.Mime = "image/png"
 	case "gif":
 		a.Type = TypeGIF
-		a.Mimetype = "image/gif"
+		a.Mime = "image/gif"
 	case "webp":
 		a.Type = TypeWebp
-		a.Mimetype = "image/webp"
+		a.Mime = "image/webp"
 	case "avif":
 		a.Type = TypeAvif
-		a.Mimetype = "image/avif"
+		a.Mime = "image/avif"
 	}
 
-	a.Width = a.Image.Bounds().Size().X
-	a.Height = a.Image.Bounds().Size().Y
+	a.Width = a.Image.Bounds().Dx()
+	a.Height = a.Image.Bounds().Dy()
 
 	switch {
 	case a.Width == a.Height:
@@ -195,24 +132,13 @@ func NewWithoutExif(img []byte, base64 ...bool) (a *Image, err errors.E) {
 	case a.Width > a.Height:
 		a.Shape = ShaperLandscape
 		a.Ratio = float64(a.Width) / float64(a.Height)
-	case a.Width < a.Height:
+	default:
 		a.Shape = ShapePortrait
 		a.Ratio = float64(a.Height) / float64(a.Width)
 	}
 
 	a.Filter = imaging.CatmullRom
 	a.Quality = 80
-
-	/* iccreader := bytes.NewReader(img)
-	icc, err := iccjpeg.GetICCBuf(iccreader)
-	if err != nil {
-		return
-	}
-
-	fmt.Println("has icc") */
-	/* a.ICC = icc */
-
-	return
 }
 
 /* даем обычный файл или base64 и получаем картинку с параметрами */
@@ -225,38 +151,19 @@ func NewFromImage(img image.Image) (a *Image) {
 	return
 }
 
-/*
-type Preset struct {
-	MaxWidth   int
-	MaxHeight  int
-	Brightness float64
-	Contrast   float64
-	Sharpen    float64
-	Quality    int
-	Filter     imaging.ResampleFilter
-}
-
-var PresetInterior = Preset{
-	MaxHeight: 1200,
-	Contrast:  1.1,
-	Sharpen:   1.1,
-	Filter:    imaging.CatmullRom,
-	Quality:   80,
-} */
-
 type Image struct {
-	Source   []byte
-	Image    image.Image
-	Ext      string  //png,jpg
-	Mimetype string  //image/jpeg
-	Type     int     //png,jpg
-	Shape    int     //box,landscape
-	Ratio    float64 //0.235,0.42114
-	Width    int     //640
-	Height   int     //480
-	Quality  int     //80
-	Size     int     //245624 bytes
-	Filter   imaging.ResampleFilter
+	Source  []byte
+	Image   image.Image
+	Ext     string  //png,jpg
+	Mime    string  //image/jpeg
+	Type    int     //png,jpg
+	Shape   int     //box,landscape
+	Ratio   float64 //0.235,0.42114
+	Width   int     //640
+	Height  int     //480
+	Quality int     //80
+	Size    int     //245624 bytes
+	Filter  imaging.ResampleFilter
 }
 
 // проходит все пиксели
@@ -361,6 +268,14 @@ func (a *Image) Export(quality ...int) (file *bytes.Buffer) {
 		gif.Encode(file, a.Image, &gif.Options{})
 	case "webp":
 		file, _ = Webp(a.Image)
+	case "avif":
+		q := 50
+		if len(quality) > 0 {
+			q = quality[0]
+		}
+		if b, err := Avifs(a.Image, q); err == nil {
+			file = &b
+		}
 	default:
 		jpeg.Encode(file, a.Image, &jpeg.Options{Quality: 80})
 	}
@@ -601,72 +516,26 @@ func (a *Image) Square(size int) *Image {
 	return &n
 }
 
-// // Decode is image.Decode handling orientation in EXIF tags if exists.
-// // Requires io.ReadSeeker instead of io.Reader.
-// func Decode(reader io.ReadSeeker) (image.Image, string, error) {
-// 	img, fmt, err := image.Decode(reader)
-// 	if err != nil {
-// 		return img, fmt, err
-// 	}
-// 	reader.Seek(0, io.SeekStart)
-// 	orientation := getOrientation(reader)
-// 	switch orientation {
-// 	case "1":
-// 	case "2":
-// 		img = imaging.FlipV(img)
-// 	case "3":
-// 		img = imaging.Rotate180(img)
-// 	case "4":
-// 		img = imaging.Rotate180(imaging.FlipV(img))
-// 	case "5":
-// 		img = imaging.Rotate270(imaging.FlipV(img))
-// 	case "6":
-// 		img = imaging.Rotate270(img)
-// 	case "7":
-// 		img = imaging.Rotate90(imaging.FlipV(img))
-// 	case "8":
-// 		img = imaging.Rotate90(img)
-// 	}
-
-// 	return img, fmt, err
-// }
-
-// func getOrientation(reader io.Reader) string {
-// 	x, err := exif.Decode(reader)
-// 	if err != nil {
-// 		return "1"
-// 	}
-// 	if x != nil {
-// 		orient, err := x.Get(exif.Orientation)
-// 		if err != nil {
-// 			return "1"
-// 		}
-// 		if orient != nil {
-// 			return orient.String()
-// 		}
-// 	}
-
-// 	return "1"
-// }
-
 type subImager interface {
 	SubImage(r image.Rectangle) image.Image
 }
 
-func (a *Image) SmartAvatar(size int) (i *Image) {
+func (a *Image) SmartAvatar(size int) *Image {
 	analyzer := smartcrop.NewAnalyzer(nfnt.NewDefaultResizer())
 
-	topCrop, err := analyzer.FindBestCrop(i.Image, size, size)
+	topCrop, err := analyzer.FindBestCrop(a.Image, size, size)
 	if err != nil {
 		fmt.Println(err)
-		return
+		return a
 	}
-	im, ok := i.Image.(subImager)
+	im, ok := a.Image.(subImager)
 	if !ok {
-		fmt.Println("smartcrop/fail", "im,ok := i.Image.(subImager)")
-		return
+		fmt.Println("smartcrop/fail", "im,ok := a.Image.(subImager)")
+		return a
 	}
-	i.Image = im.SubImage(topCrop)
+	a.Image = im.SubImage(topCrop)
+	a.Width = a.Image.Bounds().Dx()
+	a.Height = a.Image.Bounds().Dy()
 	return a
 }
 
@@ -708,14 +577,12 @@ func DecodeBase64(s string) (err error) {
 	// remove whitespace/newlines
 	s = strings.TrimSpace(s)
 
-	// standard base64
-	_, err = base64.StdEncoding.DecodeString(s)
-	if err != nil {
-		return
+	// принимаем любой из поддерживаемых вариантов base64
+	for _, enc := range base64Encodings {
+		if _, err = enc.DecodeString(s); err == nil {
+			return nil
+		}
 	}
-
-	// URL-safe base64
-	_, err = base64.RawStdEncoding.DecodeString(s)
 	return
 }
 

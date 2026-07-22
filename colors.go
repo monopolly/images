@@ -43,7 +43,7 @@ func HSLToColor(h, s, l float64) (color.Color, error) {
 	if err != nil {
 		return nil, err
 	}
-	return color.RGBA{R: r, G: g, B: b, A: 0}, nil
+	return color.RGBA{R: r, G: g, B: b, A: 255}, nil
 }
 
 // HSVToColor convert HSV triple into color.Color.
@@ -52,7 +52,7 @@ func HSVToColor(h, s, v float64) (color.Color, error) {
 	if err != nil {
 		return nil, err
 	}
-	return color.RGBA{R: r, G: g, B: b, A: 0}, nil
+	return color.RGBA{R: r, G: g, B: b, A: 255}, nil
 }
 
 // HexToColor convert Hex string into color.Color.
@@ -61,7 +61,7 @@ func HexToColor(hex string) (color.Color, error) {
 	if err != nil {
 		return nil, err
 	}
-	return color.RGBA{R: r, G: g, B: b, A: 0}, nil
+	return color.RGBA{R: r, G: g, B: b, A: 255}, nil
 }
 
 // RGBToHSL converts an RGB triple to an HSL triple.
@@ -211,8 +211,8 @@ func RGBToHex(r, g, b uint8) string {
 // HexToRGB converts a Hex string to an RGB triple.
 func HexToRGB(hex string) (r, g, b uint8, err error) {
 	// remove prefixes if found in the input string
-	hex = strings.Replace(hex, "0x", "", -1)
-	hex = strings.Replace(hex, "#", "", -1)
+	hex = strings.ReplaceAll(hex, "0x", "")
+	hex = strings.ReplaceAll(hex, "#", "")
 	if len(hex) != 6 {
 		return 0, 0, 0, fmt.Errorf("hex")
 	}
@@ -276,22 +276,6 @@ func getMaxMin(a, b, c float64) (max, min float64) {
 func round(x float64) float64 {
 	return math.Round(x*1000) / 1000
 }
-
-// how many colors in dominant
-// func (a *Image) DominantColors(count int) (list []*Color) {
-
-// 	for k, v := range a.Colors() {
-// 		list = append(list, &Color{Color: k, Count: v})
-// 	}
-
-// 	sort.Slice(list, func(i, j int) bool { return list[i].Count > list[j].Count })
-
-// 	if len(list) > count {
-// 		list = list[:count]
-// 	}
-
-// 	return
-// }
 
 type RGB struct {
 	R, G, B float64
